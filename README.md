@@ -1,6 +1,6 @@
 # Virar Organics Backend
 
-Online store, admin panel and mini CRM API. Built phase by phase; this ZIP contains **Phase 1 + Phase 2 + Phase 3**.
+Online store, admin panel and mini CRM API. Built phase by phase; this ZIP contains **Phase 1 + Phase 2 + Phase 3 + Phase 4**.
 
 ## Setup
 
@@ -90,6 +90,13 @@ Role bodies take permission **keys**, for example `{ "permissions": ["leads:read
 | POST | `/api/orders/checkout` | `orders:own` | Create order from cart + `addressId` + `paymentMethod` (`RAZORPAY` \| `COD`) |
 | GET | `/api/orders` | `orders:own` | List own orders ("My Orders") |
 | GET | `/api/orders/:id` | `orders:own` | View own order details |
+| POST | `/api/orders/:id/cancel` | `orders:own` | Cancel own `PENDING` order and restore stock |
+
+### Phase 4: Payments & Webhooks
+| Method | Path | Access | Notes |
+|--------|------|--------|-------|
+| POST | `/api/payments/razorpay/verify` | `orders:own` | Verify Razorpay client callback signature & mark order `PAID` |
+| POST | `/api/webhooks/razorpay` | public (HMAC-SHA256) | Raw-body webhook handler (`payment.captured`, `order.paid`, `payment.failed`) |
 
 ### Admin Order Management
 | Method | Path | Permission |
@@ -98,4 +105,16 @@ Role bodies take permission **keys**, for example `{ "permissions": ["leads:read
 | GET | `/api/admin/orders/:id` | `orders:read-all` |
 | PATCH | `/api/admin/orders/:id/status` | `orders:update-status` |
 
-The two real-world problems (last item in stock, payment webhook idempotency) are implemented in Phase 4 and will be explained in this README then.
+## Real-world problems solved
+
+### 1. Last item in stock (preventing overselling under concurrency)
+- During checkout (`src/services/order.service.js`), cart items are sorted by `productId` (preventing multi-row deadlocks) and decremented inside a PostgreSQL transaction using an **atomic conditional update**:
+  `UPDATE products SET stock = stock - qty WHERE id = $1 AND isActive = true AND stock >= qty`.
+- PostgreSQL takes a row-level lock on the `products` row. If two customers try to buy the last unit at the same time, the first transaction commits and sets `stock = 0`; the second waits, re-evaluates `stock >= 1` against `0`, matches `0` rows, and rolls back with `409 Conflict`.
+- On cancellation (customer or admin), `cancelAndRestoreStock` uses an atomic `WHERE stockRestored = false AND status != 'CANCELLED'` guard so stock is restored **at most once**.
+
+### 2. Payment done, order not updated (webhooks & idempotency)
+- If a customer pays on Razorpay and closes the browser before the frontend calls `/api/payments/razorpay/verify`, Razorpay delivers a `payment.captured` / `order.paid` webhook to `POST /api/webhooks/razorpay` (mounted before `express.json()` so `express.raw()` preserves the exact bytes for `x-razorpay-signature` verification).
+- **Preventing duplicate updates:**
+  1. Every webhook delivery inserts a row into `payment_events` with a `@unique` `eventId` (`x-razorpay-event-id` or deterministic fallback). Duplicate webhook retries hit PostgreSQL `P2002` and return `200 OK { received: true, duplicate: true }` immediately.
+  2. Both the client verify endpoint and the webhook handler transition the order using `markOrderPaidIfPending`, which executes an atomic `updateMany` with `WHERE id = $1 AND status = 'PENDING' AND paymentStatus != 'PAID'`. Even if both arrive simultaneously, only one can transition the order to `PAID`.

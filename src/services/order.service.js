@@ -1,7 +1,9 @@
 const crypto = require('crypto');
 const prisma = require('../config/prisma');
+const env = require('../config/env');
 const ApiError = require('../utils/ApiError');
 const { buildMeta } = require('../utils/pagination');
+const { createRazorpayOrder } = require('../utils/razorpay');
 
 const ALLOWED_TRANSITIONS = {
   PENDING: ['PAID', 'SHIPPED', 'CANCELLED'],
@@ -22,6 +24,11 @@ const orderSelect = {
   totalAmount: true,
   shippingAddress: true,
   notes: true,
+  razorpayOrderId: true,
+  razorpayPaymentId: true,
+  paidAt: true,
+  cancelledAt: true,
+  stockRestored: true,
   createdAt: true,
   updatedAt: true,
   items: {
@@ -60,8 +67,39 @@ const formatOrder = (order) => ({
   })),
 });
 
+// Atomically transitions an order to CANCELLED and restores product stock at most once.
+const cancelAndRestoreStock = async (tx, order, { select = orderSelect } = {}) => {
+  const claimed = await tx.order.updateMany({
+    where: {
+      id: order.id,
+      status: { not: 'CANCELLED' },
+      stockRestored: false,
+    },
+    data: {
+      status: 'CANCELLED',
+      stockRestored: true,
+      cancelledAt: new Date(),
+      ...(order.paymentStatus === 'PAID' ? { paymentStatus: 'REFUNDED' } : {}),
+    },
+  });
+
+  if (claimed.count === 0) {
+    throw ApiError.conflict('Order is already cancelled or stock has already been restored');
+  }
+
+  const sortedItems = [...order.items].sort((a, b) => a.productId.localeCompare(b.productId));
+  for (const item of sortedItems) {
+    await tx.product.update({
+      where: { id: item.productId },
+      data: { stock: { increment: item.quantity } },
+    });
+  }
+
+  return tx.order.findUnique({ where: { id: order.id }, select });
+};
+
 const checkout = async (userId, { addressId, paymentMethod, notes }) => {
-  const order = await prisma.$transaction(async (tx) => {
+  const createdOrder = await prisma.$transaction(async (tx) => {
     const address = await tx.address.findFirst({
       where: { id: addressId, userId },
       select: {
@@ -82,7 +120,7 @@ const checkout = async (userId, { addressId, paymentMethod, notes }) => {
       where: { userId },
       include: {
         items: {
-          orderBy: { createdAt: 'asc' },
+          orderBy: { productId: 'asc' },
           include: {
             product: {
               select: {
@@ -108,14 +146,29 @@ const checkout = async (userId, { addressId, paymentMethod, notes }) => {
     const orderItemsData = [];
     let subtotal = 0;
 
+    // Lock products in deterministic productId order and decrement stock atomically.
     for (const item of cart.items) {
       const { product } = item;
-      if (!product.isActive || !product.category.isActive) {
-        throw ApiError.conflict(`Product "${product.name}" is no longer available`);
-      }
-      if (product.stock < item.quantity) {
+      const decremented = await tx.product.updateMany({
+        where: {
+          id: product.id,
+          isActive: true,
+          category: { isActive: true },
+          stock: { gte: item.quantity },
+        },
+        data: { stock: { decrement: item.quantity } },
+      });
+
+      if (decremented.count === 0) {
+        const latest = await tx.product.findUnique({
+          where: { id: product.id },
+          select: { name: true, stock: true, isActive: true, category: { select: { isActive: true } } },
+        });
+        if (!latest || !latest.isActive || !latest.category.isActive) {
+          throw ApiError.conflict(`Product "${product.name}" is no longer available`);
+        }
         throw ApiError.conflict(
-          `Insufficient stock for "${product.name}": requested ${item.quantity}, available ${product.stock}`,
+          `Insufficient stock for "${latest.name}": requested ${item.quantity}, available ${latest.stock}`,
         );
       }
 
@@ -134,9 +187,7 @@ const checkout = async (userId, { addressId, paymentMethod, notes }) => {
       });
     }
 
-    // NOTE (Phase 4): Concurrency-safe atomic stock deduction, Razorpay order creation,
-    // and webhook payment reconciliation will be layered into this checkout flow.
-    const createdOrder = await tx.order.create({
+    const order = await tx.order.create({
       data: {
         orderNumber: generateOrderNumber(),
         userId,
@@ -153,11 +204,41 @@ const checkout = async (userId, { addressId, paymentMethod, notes }) => {
     });
 
     await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
-
-    return createdOrder;
+    return order;
   });
 
-  return formatOrder(order);
+  if (paymentMethod === 'COD') {
+    return { order: formatOrder(createdOrder) };
+  }
+
+  // Create Razorpay order; if gateway call fails, cancel and restore stock so inventory is never leaked.
+  let razorpayOrder;
+  try {
+    razorpayOrder = await createRazorpayOrder({
+      amountInPaise: Math.round(Number(createdOrder.totalAmount) * 100),
+      receipt: createdOrder.orderNumber,
+      notes: { orderId: createdOrder.id, userId },
+    });
+  } catch (err) {
+    await prisma.$transaction((tx) => cancelAndRestoreStock(tx, createdOrder));
+    throw err;
+  }
+
+  const updatedOrder = await prisma.order.update({
+    where: { id: createdOrder.id },
+    data: { razorpayOrderId: razorpayOrder.id },
+    select: orderSelect,
+  });
+
+  return {
+    order: formatOrder(updatedOrder),
+    razorpay: {
+      orderId: razorpayOrder.id,
+      amount: razorpayOrder.amount,
+      currency: razorpayOrder.currency,
+      keyId: env.RAZORPAY_KEY_ID,
+    },
+  };
 };
 
 const listOwn = async (userId, { page, limit, status, sortOrder }) => {
@@ -182,6 +263,17 @@ const getOwn = async (userId, id) => {
   const order = await prisma.order.findFirst({ where: { id, userId }, select: orderSelect });
   if (!order) throw ApiError.notFound('Order not found');
   return formatOrder(order);
+};
+
+const cancelOwn = async (userId, id) => {
+  const order = await prisma.order.findFirst({ where: { id, userId }, select: orderSelect });
+  if (!order) throw ApiError.notFound('Order not found');
+  if (order.status !== 'PENDING') {
+    throw ApiError.conflict(`Only PENDING orders can be cancelled by customer (current: ${order.status})`);
+  }
+
+  const cancelled = await prisma.$transaction((tx) => cancelAndRestoreStock(tx, order));
+  return formatOrder(cancelled);
 };
 
 const listAdmin = async ({ page, limit, status, paymentMethod, paymentStatus, userId, search, sortBy, sortOrder }) => {
@@ -227,21 +319,32 @@ const updateStatus = async (id, nextStatus) => {
     throw ApiError.conflict(`Cannot transition order from ${existing.status} to ${nextStatus}`);
   }
 
+  if (nextStatus === 'CANCELLED') {
+    const cancelled = await prisma.$transaction((tx) =>
+      cancelAndRestoreStock(tx, existing, { select: adminOrderSelect }),
+    );
+    return formatOrder(cancelled);
+  }
+
   const data = { status: nextStatus };
   if (nextStatus === 'PAID' && existing.paymentStatus === 'PENDING') {
     data.paymentStatus = 'PAID';
+    data.paidAt = new Date();
   }
 
-  // NOTE (Phase 4): Cancelling an order will restore deducted product stock atomically.
   const updated = await prisma.order.update({ where: { id }, data, select: adminOrderSelect });
   return formatOrder(updated);
 };
 
 module.exports = {
   ALLOWED_TRANSITIONS,
+  orderSelect,
+  formatOrder,
+  cancelAndRestoreStock,
   checkout,
   listOwn,
   getOwn,
+  cancelOwn,
   listAdmin,
   getAdmin,
   updateStatus,

@@ -4,6 +4,7 @@ const cors = require('cors');
 const morgan = require('morgan');
 const env = require('./config/env');
 const routes = require('./routes');
+const paymentController = require('./controllers/payment.controller');
 const notFound = require('./middleware/notFound');
 const errorHandler = require('./middleware/errorHandler');
 
@@ -14,8 +15,10 @@ app.use(helmet());
 app.use(cors({ origin: env.corsOrigins, credentials: true }));
 if (env.NODE_ENV !== 'test') app.use(morgan(env.isProduction ? 'combined' : 'dev'));
 
-// NOTE (Phase 4): the Razorpay webhook route needs the RAW request body for signature
-// verification, so it will be mounted BEFORE this JSON parser.
+// Razorpay webhook requires the raw request body for HMAC-SHA256 signature verification,
+// so it is mounted before express.json().
+app.post('/api/webhooks/razorpay', express.raw({ type: 'application/json', limit: '1mb' }), paymentController.razorpayWebhook);
+
 app.use(express.json({ limit: '1mb' }));
 
 app.use('/api', routes);

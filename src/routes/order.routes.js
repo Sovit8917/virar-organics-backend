@@ -10,5 +10,6 @@ router.use(authenticate, need('orders:own'));
 router.post('/checkout', validate({ body: ov.checkout }), order.checkout);
 router.get('/', validate({ query: ov.listOwn }), order.listOwn);
 router.get('/:id', validate({ params: ov.idParam }), order.getOwn);
+router.post('/:id/cancel', validate({ params: ov.idParam }), order.cancelOwn);
 
 module.exports = router;

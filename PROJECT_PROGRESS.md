@@ -9,7 +9,7 @@ Stack: Node.js, Express.js, PostgreSQL, Prisma ORM, JWT, bcrypt, Razorpay (Test 
 | 1 | Setup, database, authentication, dynamic RBAC, admin APIs, seed | COMPLETE (code written, not yet run) |
 | 2 | Products, categories, search, filtering, pagination and stock management | COMPLETE (code written, not yet run) |
 | 3 | Cart, delivery addresses, checkout and order management | COMPLETE (code written, not yet run) |
-| 4 | Razorpay, COD, payment webhooks, concurrency-safe inventory and stock restoration | Pending |
+| 4 | Razorpay, COD, payment webhooks, concurrency-safe inventory and stock restoration | COMPLETE (code written, not yet run) |
 | 5 | Bulk enquiries, automatic lead creation, CRM, notes and follow-ups | Pending |
 | 6 | Dashboard, integration, sample data and documentation | Pending |
 
@@ -42,10 +42,18 @@ Stack: Node.js, Express.js, PostgreSQL, Prisma ORM, JWT, bcrypt, Razorpay (Test 
 - Admin order management (`/api/admin/orders`): paginated listing with search/filters, order details, and validated status transitions (`PENDING` -> `PAID`/`SHIPPED`/`CANCELLED`, `PAID` -> `SHIPPED`/`CANCELLED`, `SHIPPED` -> `DELIVERED`/`CANCELLED`).
 - Unit/validation tests added in `tests/phase3.orders.test.js` (not executed).
 
+## Phase 4 - completed work
+
+- Prisma schema: added `razorpayOrderId`, `razorpayPaymentId`, `paidAt`, `cancelledAt`, `stockRestored` on `Order`, and `PaymentEvent` (`payment_events`) table with unique `eventId`.
+- Concurrency-safe inventory: `checkout` locks items in deterministic `productId` order and uses atomic `updateMany({ where: { id, isActive: true, stock: { gte: qty } }, data: { stock: { decrement: qty } } })` inside `prisma.$transaction`, preventing overselling when two customers buy the last unit simultaneously.
+- Atomic stock restoration: cancelling an order (`POST /api/orders/:id/cancel` for customer `PENDING` orders, or `PATCH /api/admin/orders/:id/status` with `CANCELLED` for admin) uses an atomic `stockRestored: false` guard so stock is restored at most once.
+- Razorpay Test Mode & COD: `checkout` creates a Razorpay order via REST API (`RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET`), compensating by restoring stock if the gateway call fails.
+- Payment verification & idempotent webhook: `POST /api/payments/razorpay/verify` and raw-body `POST /api/webhooks/razorpay` (mounted before `express.json()`) verify HMAC-SHA256 signatures, deduplicate deliveries via `PaymentEvent.eventId`, and use an atomic `status: 'PENDING', paymentStatus: { not: 'PAID' }` guard so an order is never marked paid twice.
+- Unit/validation tests added in `tests/phase4.payments.test.js` (not executed).
+
 ## Pending work
 
 - Database migration & seed: run `npm run prisma:migrate` and `npm run db:seed` on your machine when ready.
-- Phase 4: Razorpay, COD, payment webhooks, concurrency-safe inventory and stock restoration.
 - Phase 5: Bulk enquiries, automatic lead creation, CRM, notes and follow-ups.
 - Phase 6: Dashboard analytics, integration, sample data, full API docs and Postman collection.
 
@@ -64,14 +72,15 @@ virar-organics-backend/
   tests/
     phase2.catalog.test.js
     phase3.orders.test.js
+    phase4.payments.test.js
   src/
     server.js
     app.js
     config/        env.js, prisma.js
-    controllers/   auth, staff, role, permission, category, product, address, cart, order
+    controllers/   auth, staff, role, permission, category, product, address, cart, order, payment
     middleware/    authenticate, authorize, validate, notFound, errorHandler
-    routes/        index, auth.routes, admin.routes, category.routes, product.routes, address.routes, cart.routes, order.routes
-    services/      auth, staff, role, permission, category, product, address, cart, order
-    utils/         ApiError, asyncHandler, response, pagination, jwt, password, permissions, slug
-    validators/    common, auth, staff, role, permission, category, product, address, cart, order
+    routes/        index, auth.routes, admin.routes, category.routes, product.routes, address.routes, cart.routes, order.routes, payment.routes
+    services/      auth, staff, role, permission, category, product, address, cart, order, payment
+    utils/         ApiError, asyncHandler, response, pagination, jwt, password, permissions, slug, razorpay
+    validators/    common, auth, staff, role, permission, category, product, address, cart, order, payment
 ```

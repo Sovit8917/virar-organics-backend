@@ -8,7 +8,7 @@ router.use('/products', require('./product.routes'));
 router.use('/addresses', require('./address.routes'));
 router.use('/cart', require('./cart.routes'));
 router.use('/orders', require('./order.routes'));
-// Phase 4: Razorpay, COD, payment webhooks, concurrency-safe inventory
+router.use('/payments', require('./payment.routes'));
 // Phase 5: bulk enquiries, CRM leads, notes, follow-ups
 // Phase 6: dashboard analytics
 

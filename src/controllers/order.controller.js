@@ -15,6 +15,10 @@ exports.getOwn = asyncHandler(async (req, res) =>
   ok(res, await orderService.getOwn(req.user.id, req.params.id)),
 );
 
+exports.cancelOwn = asyncHandler(async (req, res) =>
+  ok(res, await orderService.cancelOwn(req.user.id, req.params.id)),
+);
+
 exports.listAdmin = asyncHandler(async (req, res) => {
   const { items, meta } = await orderService.listAdmin(req.query);
   ok(res, items, meta);
