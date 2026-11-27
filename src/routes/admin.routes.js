@@ -10,6 +10,7 @@ const categories = require('../controllers/category.controller');
 const products = require('../controllers/product.controller');
 const orders = require('../controllers/order.controller');
 const leads = require('../controllers/lead.controller');
+const dashboard = require('../controllers/dashboard.controller');
 const sv = require('../validators/staff.validator');
 const rv = require('../validators/role.validator');
 const pv = require('../validators/permission.validator');
@@ -86,5 +87,8 @@ router.patch('/leads/:id/follow-up', need('leads:followups'), validate({ params:
 router.get('/leads/:id/notes', need('leads:read'), validate({ params: lv.idParam }), leads.listNotes);
 router.post('/leads/:id/notes', need('leads:update'), validate({ params: lv.idParam, body: lv.addNote }), leads.addNote);
 router.delete('/leads/:id', need('leads:delete'), validate({ params: lv.idParam }), leads.remove);
+
+// ---- Dashboard (Phase 6) ----
+router.get('/dashboard', need('dashboard:read'), dashboard.getSummary);
 
 module.exports = router;

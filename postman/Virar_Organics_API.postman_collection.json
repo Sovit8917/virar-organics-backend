@@ -1,0 +1,214 @@
+{
+  "info": {
+    "name": "Virar Organics Backend API (Phases 1-6)",
+    "description": "Complete REST API collection for Virar Organics online store, admin panel, Razorpay test payments, and mini CRM.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5000/api" },
+    { "key": "token", "value": "" },
+    { "key": "categoryId", "value": "" },
+    { "key": "productId", "value": "" },
+    { "key": "addressId", "value": "" },
+    { "key": "orderId", "value": "" },
+    { "key": "leadId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        { "name": "Health Check", "request": { "method": "GET", "url": "{{baseUrl}}/health" } }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register Customer",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/register",
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Test Customer\",\n  \"email\": \"testcustomer@example.com\",\n  \"password\": \"Customer@12345\"\n}" }
+          }
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@virarorganics.test\",\n  \"password\": \"Admin@12345\"\n}" }
+          }
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/auth/me"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Storefront Catalog",
+      "item": [
+        { "name": "List Categories", "request": { "method": "GET", "url": "{{baseUrl}}/categories" } },
+        { "name": "List Products (Search & Filter)", "request": { "method": "GET", "url": "{{baseUrl}}/products?page=1&limit=20&inStock=true" } },
+        { "name": "Product Details", "request": { "method": "GET", "url": "{{baseUrl}}/products/{{productId}}" } },
+        {
+          "name": "Submit Bulk Order Enquiry",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/enquiries/bulk",
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Rohan Kulkarni\",\n  \"phone\": \"+91 9820111101\",\n  \"email\": \"rohan@freshmart.in\",\n  \"product\": \"Wood-Pressed Groundnut Oil (1L)\",\n  \"quantity\": 50,\n  \"message\": \"Monthly wholesale quote\"\n}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customer Cart, Addresses & Orders",
+      "item": [
+        {
+          "name": "Create Delivery Address",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/addresses",
+            "body": { "mode": "raw", "raw": "{\n  \"label\": \"Home\",\n  \"fullName\": \"Demo Customer\",\n  \"phone\": \"+91 9876543210\",\n  \"addressLine1\": \"102 Agashi Road\",\n  \"city\": \"Virar\",\n  \"state\": \"Maharashtra\",\n  \"postalCode\": \"401303\",\n  \"isDefault\": true\n}" }
+          }
+        },
+        {
+          "name": "Get Cart",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/cart"
+          }
+        },
+        {
+          "name": "Add Item to Cart",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/cart/items",
+            "body": { "mode": "raw", "raw": "{\n  \"productId\": \"{{productId}}\",\n  \"quantity\": 1\n}" }
+          }
+        },
+        {
+          "name": "Checkout (COD or RAZORPAY)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/orders/checkout",
+            "body": { "mode": "raw", "raw": "{\n  \"addressId\": \"{{addressId}}\",\n  \"paymentMethod\": \"COD\"\n}" }
+          }
+        },
+        {
+          "name": "Verify Razorpay Payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/payments/razorpay/verify",
+            "body": { "mode": "raw", "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"razorpayOrderId\": \"order_xxx\",\n  \"razorpayPaymentId\": \"pay_xxx\",\n  \"razorpaySignature\": \"sig_xxx\"\n}" }
+          }
+        },
+        {
+          "name": "My Orders",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/orders"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin & CRM",
+      "item": [
+        {
+          "name": "Admin Dashboard Summary",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/admin/dashboard"
+          }
+        },
+        {
+          "name": "Admin List Orders",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/admin/orders"
+          }
+        },
+        {
+          "name": "Admin Update Order Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/admin/orders/{{orderId}}/status",
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"SHIPPED\"\n}" }
+          }
+        },
+        {
+          "name": "CRM List Leads",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/admin/leads"
+          }
+        },
+        {
+          "name": "CRM Today's Follow-ups",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": "{{baseUrl}}/admin/leads/follow-ups/today"
+          }
+        },
+        {
+          "name": "CRM Update Lead Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/admin/leads/{{leadId}}/status",
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"CONTACTED\"\n}" }
+          }
+        },
+        {
+          "name": "CRM Add Lead Note",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/admin/leads/{{leadId}}/notes",
+            "body": { "mode": "raw", "raw": "{\n  \"content\": \"Called customer and shared wholesale quote.\"\n}" }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 # Virar Organics Backend
 
-Online store, admin panel and mini CRM API. Built phase by phase; this ZIP contains **Phase 1 + Phase 2 + Phase 3 + Phase 4 + Phase 5**.
+Online store, admin panel and mini CRM API. Built phase by phase; this ZIP contains the complete backend (**Phases 1–6**).
 
 ## Setup
 
@@ -116,6 +116,18 @@ Role bodies take permission **keys**, for example `{ "permissions": ["leads:read
 | PATCH | `/api/admin/leads/:id/follow-up` | `leads:followups` | Set or clear `followUpDate` (and optional `assignedToId`) |
 | GET, POST | `/api/admin/leads/:id/notes` | `leads:read`, `leads:update` | View or add CRM notes |
 | DELETE | `/api/admin/leads/:id` | `leads:delete` | Admin-only lead deletion |
+
+## Phase 6 endpoints & tooling
+
+### Admin Dashboard
+| Method | Path | Permission | Notes |
+|--------|------|-----------|-------|
+| GET | `/api/admin/dashboard` | `dashboard:read` | Returns `totalOrdersToday`, `revenueThisMonth`, `newLeadsCount`, `todaysFollowUpsCount`, `lowStockProductsCount` |
+
+### Sample Data, Tests & Postman
+- `npm run db:seed` populates roles, permissions, 3 accounts, 5 categories, 10 organic products, 1 customer address, 3 sample orders, and 5 bulk enquiries/leads with notes.
+- `npm test` runs the Node built-in test suite (`tests/*.test.js`).
+- Import `postman/Virar_Organics_API.postman_collection.json` into Postman to test all endpoints.
 
 ### Admin Order Management
 | Method | Path | Permission |
