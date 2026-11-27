@@ -156,6 +156,22 @@ enum PaymentStatus {
   REFUND_FAILED
 }
 
+enum PaymentEventStatus {
+  PROCESSED
+  UNRECONCILED
+  FAILED
+}
+
+enum PaymentCaptureStatus {
+  CAPTURED
+  REFUND_PENDING
+  REFUNDED
+  REFUND_FAILED
+  DUPLICATE_REFUND_PENDING
+  DUPLICATE_REFUNDED
+  DUPLICATE_REFUND_FAILED
+}
+
 model Address {
   id           String   @id @default(uuid())
   userId       String
@@ -222,9 +238,10 @@ model Order {
   paidAt            DateTime?
   cancelledAt       DateTime?
   refundedAt        DateTime?
-  stockRestored     Boolean       @default(false)
+  stockRestored     Boolean              @default(false)
   items             OrderItem[]
-  createdAt         DateTime      @default(now())
+  paymentCaptures   PaymentTransaction[]
+  createdAt         DateTime             @default(now())
   updatedAt         DateTime      @updatedAt
 
   @@index([userId])
@@ -253,16 +270,40 @@ model OrderItem {
 }
 
 
+model PaymentTransaction {
+  id                String               @id @default(uuid())
+  orderId           String
+  order             Order                @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  razorpayOrderId   String?
+  razorpayPaymentId String               @unique
+  amountInPaise     Int?
+  status            PaymentCaptureStatus @default(CAPTURED)
+  razorpayRefundId  String?              @unique
+  refundedAt        DateTime?
+  lastError         String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@index([orderId])
+  @@index([status])
+  @@map("payment_transactions")
+}
+
 model PaymentEvent {
-  id                String   @id @default(uuid())
-  provider          String   @default("RAZORPAY")
-  eventId           String   @unique
+  id                String             @id @default(uuid())
+  provider          String             @default("RAZORPAY")
+  eventId           String             @unique
   eventType         String
+  status            PaymentEventStatus @default(PROCESSED)
+  attempts          Int                @default(1)
+  lastError         String?
   razorpayOrderId   String?
   razorpayPaymentId String?
   payload           Json
-  processedAt       DateTime @default(now())
+  processedAt       DateTime           @default(now())
+  reconciledAt      DateTime?
 
+  @@index([status])
   @@index([razorpayOrderId])
   @@index([razorpayPaymentId])
   @@map("payment_events")

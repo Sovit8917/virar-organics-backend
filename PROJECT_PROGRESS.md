@@ -62,10 +62,10 @@ Stack: Node.js, Express.js, PostgreSQL, Prisma ORM, JWT, bcrypt, Razorpay (Test 
 ## Phase 6 - completed work
 
 - Admin Dashboard (`GET /api/admin/dashboard`, `dashboard:read`): returns `totalOrdersToday`, `revenueThisMonth` (strictly `paymentStatus: 'PAID'` and `status != 'CANCELLED'`, excluding pending COD/unpaid orders), `newLeadsCount`, `todaysFollowUpsCount`, and `lowStockProductsCount`.
-- Paid-order cancellation & Razorpay Refunds: added `REFUND_PENDING` / `REFUND_FAILED` statuses, `razorpayRefundId`, `refundedAt`, `createRazorpayRefund` (`src/utils/razorpay.js`), `executeRazorpayRefund` (`src/services/refund.service.js`), `refund.processed` / `refund.failed` webhook handling, and `POST /api/admin/orders/:id/refund` retry endpoint. Orders are marked `REFUNDED` only after Razorpay confirms.
-- Payment/cancellation race safety: `reconcileCapturedPayment` atomically reconciles late payments arriving after cancellation by preserving `razorpayPaymentId` / `paidAt`, claiming `REFUND_PENDING`, and initiating a Razorpay refund without losing the payment event.
-- Sample data (`prisma/seed.js`): idempotent seeding for 5 organic categories, 10 products, 1 customer delivery address, 3 sample orders, and 5 bulk enquiries/CRM leads with notes and today's follow-ups.
-- Integration & documentation: added `tests/phase6.dashboard.test.js`, `tests/phase4_6.fixes.test.js`, `"test"` script in `package.json`, `postman/Virar_Organics_API.postman_collection.json`, and finalized `README.md`.
+- Paid-order cancellation & Razorpay Refunds: added `REFUND_PENDING` / `REFUND_FAILED` statuses, `razorpayRefundId`, `refundedAt`, `PaymentTransaction` capture tracking, `listPaymentRefunds` timeout-safe deduplication, `createRazorpayRefund` (`src/utils/razorpay.js`), `executeRazorpayRefund` & `executeDuplicateCaptureRefund` (`src/services/refund.service.js`), `refund.processed` / `refund.failed` webhook handling, and `POST /api/admin/orders/:id/refund` retry endpoint (including failed refunds that already have a `razorpayRefundId`).
+- Payment/cancellation race & duplicate-capture safety: `cancelAndRestoreStock` evaluates `paymentStatus` strictly inside DB `updateMany` `WHERE` clauses so `CANCELLED + PAID` without a refund workflow is impossible; `reconcileCapturedPayment` handles late captures after cancellation (`REFUND_PENDING`) and detects multiple successful payments per order (`DUPLICATE_REFUND_PENDING`).
+- Webhook recovery: `PaymentEvent` tracks `PROCESSED` | `UNRECONCILED` | `FAILED` with `attempts`, `lastError`, and `reconciledAt` so unreconciled events are never permanently consumed and can be replayed via `POST /api/admin/payments/webhooks/recover`.
+- Integration & documentation: added `tests/phase6.dashboard.test.js`, `tests/phase4_6.fixes.test.js`, `tests/phase4_6.audit.test.js`, `"test"` script in `package.json`, `postman/Virar_Organics_API.postman_collection.json`, and finalized `README.md`.
 
 ## Next steps on your machine
 
@@ -94,6 +94,7 @@ virar-organics-backend/
     phase5.crm.test.js
     phase6.dashboard.test.js
     phase4_6.fixes.test.js
+    phase4_6.audit.test.js
   src/
     server.js
     app.js

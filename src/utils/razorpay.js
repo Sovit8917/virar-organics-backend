@@ -42,18 +42,41 @@ const createRazorpayOrder = async ({ amountInPaise, receipt, notes = {} }) => {
   return data;
 };
 
-const createRazorpayRefund = async ({ razorpayPaymentId, amountInPaise, notes = {} }) => {
+const listPaymentRefunds = async (razorpayPaymentId) => {
   assertRazorpayKeys();
   const auth = Buffer.from(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`).toString('base64');
+
+  const response = await fetch(
+    `https://api.razorpay.com/v1/payments/${encodeURIComponent(razorpayPaymentId)}/refunds`,
+    {
+      method: 'GET',
+      headers: { Authorization: `Basic ${auth}` },
+    },
+  );
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const msg = data?.error?.description || 'Failed to fetch Razorpay payment refunds';
+    throw new ApiError(502, msg);
+  }
+  return Array.isArray(data?.items) ? data.items : [];
+};
+
+const createRazorpayRefund = async ({ razorpayPaymentId, amountInPaise, notes = {}, idempotencyKey }) => {
+  assertRazorpayKeys();
+  const auth = Buffer.from(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`).toString('base64');
+
+  const headers = {
+    Authorization: `Basic ${auth}`,
+    'Content-Type': 'application/json',
+  };
+  if (idempotencyKey) headers['X-Razorpay-Idempotency'] = idempotencyKey;
 
   const response = await fetch(
     `https://api.razorpay.com/v1/payments/${encodeURIComponent(razorpayPaymentId)}/refund`,
     {
       method: 'POST',
-      headers: {
-        Authorization: `Basic ${auth}`,
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify({
         amount: amountInPaise,
         notes,
@@ -94,6 +117,7 @@ const verifyWebhookSignature = (rawBody, signatureHeader) => {
 module.exports = {
   safeEqualHex,
   createRazorpayOrder,
+  listPaymentRefunds,
   createRazorpayRefund,
   verifyPaymentSignature,
   verifyWebhookSignature,

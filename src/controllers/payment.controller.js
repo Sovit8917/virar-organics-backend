@@ -9,3 +9,7 @@ exports.verifyRazorpay = asyncHandler(async (req, res) =>
 exports.razorpayWebhook = asyncHandler(async (req, res) =>
   ok(res, await paymentService.handleRazorpayWebhook(req.body, req.headers)),
 );
+
+exports.recoverWebhooks = asyncHandler(async (req, res) =>
+  ok(res, await paymentService.recoverUnreconciledWebhooks()),
+);

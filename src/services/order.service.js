@@ -71,32 +71,64 @@ const formatOrder = (order) => ({
 });
 
 // Atomically transitions an order to CANCELLED and restores product stock at most once.
-// For PAID Razorpay orders, marks REFUND_PENDING (never REFUNDED until Razorpay confirms).
-const cancelAndRestoreStock = async (tx, order, { select = orderSelect } = {}) => {
-  const shouldRefund =
-    order.paymentMethod === 'RAZORPAY' &&
-    order.paymentStatus === 'PAID' &&
-    !order.razorpayRefundId;
+// Evaluates paymentStatus strictly inside the DB WHERE clause so a concurrent payment
+// can never leave an order in CANCELLED + PAID without triggering a refund workflow.
+const cancelAndRestoreStock = async (
+  tx,
+  orderOrId,
+  { select = orderSelect, allowedStatuses = ['PENDING', 'PAID', 'SHIPPED'] } = {},
+) => {
+  const orderId = typeof orderOrId === 'string' ? orderOrId : orderOrId.id;
+  const now = new Date();
 
-  const claimed = await tx.order.updateMany({
+  const unpaidClaim = await tx.order.updateMany({
     where: {
-      id: order.id,
-      status: { not: 'CANCELLED' },
+      id: orderId,
+      status: { in: allowedStatuses },
       stockRestored: false,
+      paymentStatus: { in: ['PENDING', 'FAILED'] },
     },
     data: {
       status: 'CANCELLED',
       stockRestored: true,
-      cancelledAt: new Date(),
-      ...(shouldRefund ? { paymentStatus: 'REFUND_PENDING' } : {}),
+      cancelledAt: now,
     },
   });
 
-  if (claimed.count === 0) {
-    throw ApiError.conflict('Order is already cancelled or stock has already been restored');
+  let needsRefund = false;
+  if (unpaidClaim.count === 0) {
+    const paidClaim = await tx.order.updateMany({
+      where: {
+        id: orderId,
+        status: { in: allowedStatuses },
+        stockRestored: false,
+        paymentMethod: 'RAZORPAY',
+        paymentStatus: 'PAID',
+        razorpayRefundId: null,
+      },
+      data: {
+        status: 'CANCELLED',
+        stockRestored: true,
+        cancelledAt: now,
+        paymentStatus: 'REFUND_PENDING',
+      },
+    });
+
+    if (paidClaim.count === 0) {
+      throw ApiError.conflict('Order cannot be cancelled in its current state or stock was already restored');
+    }
+    needsRefund = true;
   }
 
-  const sortedItems = [...order.items].sort((a, b) => a.productId.localeCompare(b.productId));
+  const updated = await tx.order.findUnique({
+    where: { id: orderId },
+    select: {
+      ...select,
+      items: select.items || { select: { productId: true, quantity: true } },
+    },
+  });
+
+  const sortedItems = [...updated.items].sort((a, b) => a.productId.localeCompare(b.productId));
   for (const item of sortedItems) {
     await tx.product.update({
       where: { id: item.productId },
@@ -104,8 +136,7 @@ const cancelAndRestoreStock = async (tx, order, { select = orderSelect } = {}) =
     });
   }
 
-  const updated = await tx.order.findUnique({ where: { id: order.id }, select });
-  return { order: updated, needsRefund: shouldRefund };
+  return { order: updated, needsRefund };
 };
 
 const checkout = async (userId, { addressId, paymentMethod, notes }) => {
@@ -276,13 +307,15 @@ const getOwn = async (userId, id) => {
 };
 
 const cancelOwn = async (userId, id) => {
-  const order = await prisma.order.findFirst({ where: { id, userId }, select: orderSelect });
+  const order = await prisma.order.findFirst({ where: { id, userId }, select: { id: true, status: true } });
   if (!order) throw ApiError.notFound('Order not found');
   if (order.status !== 'PENDING') {
     throw ApiError.conflict(`Only PENDING orders can be cancelled by customer (current: ${order.status})`);
   }
 
-  const { order: cancelled } = await prisma.$transaction((tx) => cancelAndRestoreStock(tx, order));
+  const { order: cancelled } = await prisma.$transaction((tx) =>
+    cancelAndRestoreStock(tx, id, { allowedStatuses: ['PENDING'] }),
+  );
   return formatOrder(cancelled);
 };
 
@@ -362,7 +395,8 @@ const updateStatus = async (id, nextStatus) => {
   return formatOrder(updated);
 };
 
-// Retries a failed refund for an already-cancelled Razorpay order without risking duplicate refunds.
+// Retries a failed refund for an already-cancelled Razorpay order, including failed refunds
+// that already have a razorpayRefundId. Timeout-safe via listPaymentRefunds check.
 const retryRefund = async (id) => {
   const claimed = await prisma.order.updateMany({
     where: {
@@ -370,13 +404,12 @@ const retryRefund = async (id) => {
       status: 'CANCELLED',
       paymentMethod: 'RAZORPAY',
       paymentStatus: 'REFUND_FAILED',
-      razorpayRefundId: null,
     },
     data: { paymentStatus: 'REFUND_PENDING' },
   });
 
   if (claimed.count === 0) {
-    const existing = await prisma.order.findUnique({ where: { id }, select: { id: true, paymentStatus: true, razorpayRefundId: true } });
+    const existing = await prisma.order.findUnique({ where: { id }, select: { id: true, paymentStatus: true } });
     if (!existing) throw ApiError.notFound('Order not found');
     throw ApiError.conflict(`Order is not eligible for refund retry (paymentStatus: ${existing.paymentStatus})`);
   }

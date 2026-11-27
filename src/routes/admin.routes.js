@@ -11,6 +11,7 @@ const products = require('../controllers/product.controller');
 const orders = require('../controllers/order.controller');
 const leads = require('../controllers/lead.controller');
 const dashboard = require('../controllers/dashboard.controller');
+const payments = require('../controllers/payment.controller');
 const sv = require('../validators/staff.validator');
 const rv = require('../validators/role.validator');
 const pv = require('../validators/permission.validator');
@@ -77,6 +78,7 @@ router.get('/orders', need('orders:read-all'), validate({ query: ov.listAdmin })
 router.get('/orders/:id', need('orders:read-all'), validate({ params: ov.idParam }), orders.getAdmin);
 router.patch('/orders/:id/status', need('orders:update-status'), validate({ params: ov.idParam, body: ov.updateStatus }), orders.updateStatus);
 router.post('/orders/:id/refund', need('orders:update-status'), validate({ params: ov.idParam }), orders.retryRefund);
+router.post('/payments/webhooks/recover', need('orders:update-status'), payments.recoverWebhooks);
 
 // ---- CRM Leads, Notes & Follow-ups (Phase 5) ----
 router.get('/leads', need('leads:read'), validate({ query: lv.list }), leads.list);
