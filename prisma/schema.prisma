@@ -1,0 +1,122 @@
+// Virar Organics - Prisma schema
+// Phase 1: User, Role, Permission, RolePermission (dynamic RBAC)
+// Phase 2: Category, Product (catalog, pricing, stock management)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(uuid())
+  name         String
+  email        String    @unique
+  phone        String?
+  passwordHash String
+  isActive     Boolean   @default(true)
+  // Incremented on password change / deactivation so older JWTs stop working.
+  tokenVersion Int       @default(0)
+  lastLoginAt  DateTime?
+  roleId       String
+  role         Role      @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([roleId])
+  @@index([isActive])
+  @@index([createdAt])
+  @@map("users")
+}
+
+model Role {
+  id          String           @id @default(uuid())
+  name        String           @unique
+  description String?
+  // System roles (Admin, Sales Executive, Customer) cannot be deleted or renamed.
+  isSystem    Boolean          @default(false)
+  users       User[]
+  permissions RolePermission[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(uuid())
+  // Format "resource:action", e.g. "leads:read"
+  key         String           @unique
+  description String?
+  group       String
+  isSystem    Boolean          @default(false)
+  roles       RolePermission[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([group])
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  assignedAt   DateTime   @default(now())
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+
+model Category {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  slug        String    @unique
+  description String?
+  imageUrl    String?
+  isActive    Boolean   @default(true)
+  sortOrder   Int       @default(0)
+  products    Product[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([isActive])
+  @@index([sortOrder])
+  @@map("categories")
+}
+
+model Product {
+  id                String   @id @default(uuid())
+  name              String
+  slug              String   @unique
+  sku               String   @unique
+  shortDescription  String?
+  description       String?
+  price             Decimal  @db.Decimal(10, 2)
+  compareAtPrice    Decimal? @db.Decimal(10, 2)
+  unit              String   @default("unit")
+  stock             Int      @default(0)
+  lowStockThreshold Int      @default(5)
+  imageUrl          String?
+  images            String[] @default([])
+  isActive          Boolean  @default(true)
+  isFeatured        Boolean  @default(false)
+  categoryId        String
+  category          Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([categoryId])
+  @@index([isActive])
+  @@index([isFeatured])
+  @@index([price])
+  @@index([stock])
+  @@index([createdAt])
+  @@map("products")
+}
