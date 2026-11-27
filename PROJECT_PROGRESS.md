@@ -10,7 +10,7 @@ Stack: Node.js, Express.js, PostgreSQL, Prisma ORM, JWT, bcrypt, Razorpay (Test 
 | 2 | Products, categories, search, filtering, pagination and stock management | COMPLETE (code written, not yet run) |
 | 3 | Cart, delivery addresses, checkout and order management | COMPLETE (code written, not yet run) |
 | 4 | Razorpay, COD, payment webhooks, concurrency-safe inventory and stock restoration | COMPLETE (code written, not yet run) |
-| 5 | Bulk enquiries, automatic lead creation, CRM, notes and follow-ups | Pending |
+| 5 | Bulk enquiries, automatic lead creation, CRM, notes and follow-ups | COMPLETE (code written, not yet run) |
 | 6 | Dashboard, integration, sample data and documentation | Pending |
 
 ## Phase 1 - completed work
@@ -51,10 +51,17 @@ Stack: Node.js, Express.js, PostgreSQL, Prisma ORM, JWT, bcrypt, Razorpay (Test 
 - Payment verification & idempotent webhook: `POST /api/payments/razorpay/verify` and raw-body `POST /api/webhooks/razorpay` (mounted before `express.json()`) verify HMAC-SHA256 signatures, deduplicate deliveries via `PaymentEvent.eventId`, and use an atomic `status: 'PENDING', paymentStatus: { not: 'PAID' }` guard so an order is never marked paid twice.
 - Unit/validation tests added in `tests/phase4.payments.test.js` (not executed).
 
+## Phase 5 - completed work
+
+- Prisma schema: `LeadStatus` enum, `BulkEnquiry`, `Lead`, and `LeadNote` models with relations to `Product` and `User`.
+- Public Bulk Order Enquiry (`POST /api/enquiries/bulk`): validates enquiry fields, resolves optional `productId`, creates `BulkEnquiry`, and automatically creates a `Lead` in `NEW` status inside a transaction.
+- Mini CRM (`/api/admin/leads`): paginated lead listing with filters/search, "Today's follow-ups" (`GET /api/admin/leads/follow-ups/today`), lead details with notes, status transitions (`NEW` -> `CONTACTED` -> `CONVERTED` / `LOST`), follow-up date scheduling, staff assignment, and CRM notes (`POST /api/admin/leads/:id/notes`).
+- RBAC enforcement: `Sales Executive` (`leads:read`, `leads:update`, `leads:followups`) can view/update leads, notes, and follow-ups, but is blocked (`403`) from `leads:delete`, products, categories, and orders.
+- Unit/validation tests added in `tests/phase5.crm.test.js` (not executed).
+
 ## Pending work
 
 - Database migration & seed: run `npm run prisma:migrate` and `npm run db:seed` on your machine when ready.
-- Phase 5: Bulk enquiries, automatic lead creation, CRM, notes and follow-ups.
 - Phase 6: Dashboard analytics, integration, sample data, full API docs and Postman collection.
 
 ## File structure
@@ -73,14 +80,15 @@ virar-organics-backend/
     phase2.catalog.test.js
     phase3.orders.test.js
     phase4.payments.test.js
+    phase5.crm.test.js
   src/
     server.js
     app.js
     config/        env.js, prisma.js
-    controllers/   auth, staff, role, permission, category, product, address, cart, order, payment
+    controllers/   auth, staff, role, permission, category, product, address, cart, order, payment, enquiry, lead
     middleware/    authenticate, authorize, validate, notFound, errorHandler
-    routes/        index, auth.routes, admin.routes, category.routes, product.routes, address.routes, cart.routes, order.routes, payment.routes
-    services/      auth, staff, role, permission, category, product, address, cart, order, payment
+    routes/        index, auth.routes, admin.routes, category.routes, product.routes, address.routes, cart.routes, order.routes, payment.routes, enquiry.routes
+    services/      auth, staff, role, permission, category, product, address, cart, order, payment, enquiry, lead
     utils/         ApiError, asyncHandler, response, pagination, jwt, password, permissions, slug, razorpay
-    validators/    common, auth, staff, role, permission, category, product, address, cart, order, payment
+    validators/    common, auth, staff, role, permission, category, product, address, cart, order, payment, enquiry, lead
 ```

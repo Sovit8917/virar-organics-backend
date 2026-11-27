@@ -9,12 +9,14 @@ const perms = require('../controllers/permission.controller');
 const categories = require('../controllers/category.controller');
 const products = require('../controllers/product.controller');
 const orders = require('../controllers/order.controller');
+const leads = require('../controllers/lead.controller');
 const sv = require('../validators/staff.validator');
 const rv = require('../validators/role.validator');
 const pv = require('../validators/permission.validator');
 const cv = require('../validators/category.validator');
 const prdv = require('../validators/product.validator');
 const ov = require('../validators/order.validator');
+const lv = require('../validators/lead.validator');
 
 // Every admin route requires a valid token; each route then checks its own permission.
 router.use(authenticate);
@@ -73,5 +75,16 @@ router.patch('/products/:id/stock', need('inventory:update'), validate({ params:
 router.get('/orders', need('orders:read-all'), validate({ query: ov.listAdmin }), orders.listAdmin);
 router.get('/orders/:id', need('orders:read-all'), validate({ params: ov.idParam }), orders.getAdmin);
 router.patch('/orders/:id/status', need('orders:update-status'), validate({ params: ov.idParam, body: ov.updateStatus }), orders.updateStatus);
+
+// ---- CRM Leads, Notes & Follow-ups (Phase 5) ----
+router.get('/leads', need('leads:read'), validate({ query: lv.list }), leads.list);
+router.get('/leads/follow-ups/today', need('leads:followups'), validate({ query: lv.todayFollowUps }), leads.todayFollowUps);
+router.get('/leads/:id', need('leads:read'), validate({ params: lv.idParam }), leads.get);
+router.patch('/leads/:id', need('leads:update'), validate({ params: lv.idParam, body: lv.update }), leads.update);
+router.patch('/leads/:id/status', need('leads:update'), validate({ params: lv.idParam, body: lv.updateStatus }), leads.updateStatus);
+router.patch('/leads/:id/follow-up', need('leads:followups'), validate({ params: lv.idParam, body: lv.setFollowUp }), leads.setFollowUp);
+router.get('/leads/:id/notes', need('leads:read'), validate({ params: lv.idParam }), leads.listNotes);
+router.post('/leads/:id/notes', need('leads:update'), validate({ params: lv.idParam, body: lv.addNote }), leads.addNote);
+router.delete('/leads/:id', need('leads:delete'), validate({ params: lv.idParam }), leads.remove);
 
 module.exports = router;

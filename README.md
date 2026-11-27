@@ -1,6 +1,6 @@
 # Virar Organics Backend
 
-Online store, admin panel and mini CRM API. Built phase by phase; this ZIP contains **Phase 1 + Phase 2 + Phase 3 + Phase 4**.
+Online store, admin panel and mini CRM API. Built phase by phase; this ZIP contains **Phase 1 + Phase 2 + Phase 3 + Phase 4 + Phase 5**.
 
 ## Setup
 
@@ -97,6 +97,25 @@ Role bodies take permission **keys**, for example `{ "permissions": ["leads:read
 |--------|------|--------|-------|
 | POST | `/api/payments/razorpay/verify` | `orders:own` | Verify Razorpay client callback signature & mark order `PAID` |
 | POST | `/api/webhooks/razorpay` | public (HMAC-SHA256) | Raw-body webhook handler (`payment.captured`, `order.paid`, `payment.failed`) |
+
+## Phase 5 endpoints
+
+### Public Bulk Order Enquiry
+| Method | Path | Access | Notes |
+|--------|------|--------|-------|
+| POST | `/api/enquiries/bulk` | public | Submit bulk enquiry (`name`, `phone`, `email`, `productId`/`product`, `quantity`, `message`); auto-creates `NEW` CRM lead |
+
+### Mini CRM — Leads, Notes & Follow-ups (Admin & Sales Executive)
+| Method | Path | Permission | Notes |
+|--------|------|-----------|-------|
+| GET | `/api/admin/leads` | `leads:read` | List leads with filters (`status`, `assignedToId`, `hasFollowUp`, `search`, pagination) |
+| GET | `/api/admin/leads/follow-ups/today` | `leads:followups` | List Today's follow-ups (excludes `CONVERTED`/`LOST` by default) |
+| GET | `/api/admin/leads/:id` | `leads:read` | Lead details including enquiry, product, assignee, and notes |
+| PATCH | `/api/admin/leads/:id` | `leads:update` | Update `status`, `followUpDate`, or `assignedToId` |
+| PATCH | `/api/admin/leads/:id/status` | `leads:update` | Transition status (`NEW` → `CONTACTED` → `CONVERTED` \| `LOST`) |
+| PATCH | `/api/admin/leads/:id/follow-up` | `leads:followups` | Set or clear `followUpDate` (and optional `assignedToId`) |
+| GET, POST | `/api/admin/leads/:id/notes` | `leads:read`, `leads:update` | View or add CRM notes |
+| DELETE | `/api/admin/leads/:id` | `leads:delete` | Admin-only lead deletion |
 
 ### Admin Order Management
 | Method | Path | Permission |

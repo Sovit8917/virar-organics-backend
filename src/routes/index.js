@@ -9,7 +9,7 @@ router.use('/addresses', require('./address.routes'));
 router.use('/cart', require('./cart.routes'));
 router.use('/orders', require('./order.routes'));
 router.use('/payments', require('./payment.routes'));
-// Phase 5: bulk enquiries, CRM leads, notes, follow-ups
+router.use('/enquiries', require('./enquiry.routes'));
 // Phase 6: dashboard analytics
 
 module.exports = router;
