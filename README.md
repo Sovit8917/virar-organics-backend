@@ -1,6 +1,6 @@
 # Virar Organics Backend
 
-Online store, admin panel and mini CRM API. Built phase by phase; this ZIP contains **Phase 1 + Phase 2**.
+Online store, admin panel and mini CRM API. Built phase by phase; this ZIP contains **Phase 1 + Phase 2 + Phase 3**.
 
 ## Setup
 
@@ -76,5 +76,26 @@ Role bodies take permission **keys**, for example `{ "permissions": ["leads:read
 | GET, PATCH, DELETE | `/api/admin/products/:id` | `products:*` / `inventory:read`, `products:update`, `products:delete` |
 | PATCH | `/api/admin/products/:id/price` | `products:update` |
 | PATCH | `/api/admin/products/:id/stock` | `inventory:update` (`action`: `set` \| `increment` \| `decrement`) |
+
+## Phase 3 endpoints
+
+### Customer Addresses, Cart & Orders
+| Method | Path | Permission | Notes |
+|--------|------|-----------|-------|
+| GET, POST | `/api/addresses` | `addresses:own` | List or create own delivery addresses |
+| GET, PATCH, DELETE | `/api/addresses/:id` | `addresses:own` | Manage own delivery address (auto-manages `isDefault`) |
+| GET, DELETE | `/api/cart` | `cart:own` | View cart with live totals or clear cart |
+| POST | `/api/cart/items` | `cart:own` | Add product to cart (`productId`, `quantity`) |
+| PATCH, DELETE | `/api/cart/items/:productId` | `cart:own` | Update item quantity (`0` removes) or remove item |
+| POST | `/api/orders/checkout` | `orders:own` | Create order from cart + `addressId` + `paymentMethod` (`RAZORPAY` \| `COD`) |
+| GET | `/api/orders` | `orders:own` | List own orders ("My Orders") |
+| GET | `/api/orders/:id` | `orders:own` | View own order details |
+
+### Admin Order Management
+| Method | Path | Permission |
+|--------|------|-----------|
+| GET | `/api/admin/orders` | `orders:read-all` |
+| GET | `/api/admin/orders/:id` | `orders:read-all` |
+| PATCH | `/api/admin/orders/:id/status` | `orders:update-status` |
 
 The two real-world problems (last item in stock, payment webhook idempotency) are implemented in Phase 4 and will be explained in this README then.

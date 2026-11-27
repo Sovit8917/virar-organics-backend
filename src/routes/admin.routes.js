@@ -8,11 +8,13 @@ const roles = require('../controllers/role.controller');
 const perms = require('../controllers/permission.controller');
 const categories = require('../controllers/category.controller');
 const products = require('../controllers/product.controller');
+const orders = require('../controllers/order.controller');
 const sv = require('../validators/staff.validator');
 const rv = require('../validators/role.validator');
 const pv = require('../validators/permission.validator');
 const cv = require('../validators/category.validator');
 const prdv = require('../validators/product.validator');
+const ov = require('../validators/order.validator');
 
 // Every admin route requires a valid token; each route then checks its own permission.
 router.use(authenticate);
@@ -66,5 +68,10 @@ router.patch('/products/:id', need('products:update'), validate({ params: prdv.i
 router.delete('/products/:id', need('products:delete'), validate({ params: prdv.idParam }), products.remove);
 router.patch('/products/:id/price', need('products:update'), validate({ params: prdv.idParam, body: prdv.updatePrice }), products.updatePrice);
 router.patch('/products/:id/stock', need('inventory:update'), validate({ params: prdv.idParam, body: prdv.adjustStock }), products.adjustStock);
+
+// ---- Orders (Phase 3) ----
+router.get('/orders', need('orders:read-all'), validate({ query: ov.listAdmin }), orders.listAdmin);
+router.get('/orders/:id', need('orders:read-all'), validate({ params: ov.idParam }), orders.getAdmin);
+router.patch('/orders/:id/status', need('orders:update-status'), validate({ params: ov.idParam, body: ov.updateStatus }), orders.updateStatus);
 
 module.exports = router;

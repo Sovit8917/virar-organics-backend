@@ -5,7 +5,9 @@ router.use('/auth', require('./auth.routes'));
 router.use('/admin', require('./admin.routes'));
 router.use('/categories', require('./category.routes'));
 router.use('/products', require('./product.routes'));
-// Phase 3: cart, delivery addresses, checkout, orders
+router.use('/addresses', require('./address.routes'));
+router.use('/cart', require('./cart.routes'));
+router.use('/orders', require('./order.routes'));
 // Phase 4: Razorpay, COD, payment webhooks, concurrency-safe inventory
 // Phase 5: bulk enquiries, CRM leads, notes, follow-ups
 // Phase 6: dashboard analytics

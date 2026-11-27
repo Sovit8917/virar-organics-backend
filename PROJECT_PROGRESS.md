@@ -8,7 +8,7 @@ Stack: Node.js, Express.js, PostgreSQL, Prisma ORM, JWT, bcrypt, Razorpay (Test 
 |-------|-------|--------|
 | 1 | Setup, database, authentication, dynamic RBAC, admin APIs, seed | COMPLETE (code written, not yet run) |
 | 2 | Products, categories, search, filtering, pagination and stock management | COMPLETE (code written, not yet run) |
-| 3 | Cart, delivery addresses, checkout and order management | Pending |
+| 3 | Cart, delivery addresses, checkout and order management | COMPLETE (code written, not yet run) |
 | 4 | Razorpay, COD, payment webhooks, concurrency-safe inventory and stock restoration | Pending |
 | 5 | Bulk enquiries, automatic lead creation, CRM, notes and follow-ups | Pending |
 | 6 | Dashboard, integration, sample data and documentation | Pending |
@@ -33,10 +33,18 @@ Stack: Node.js, Express.js, PostgreSQL, Prisma ORM, JWT, bcrypt, Razorpay (Test 
 - RBAC enforcement: admin catalog endpoints require `categories:*`, `products:*`, or `inventory:*` permissions (`Admin` allowed; `Sales Executive` and `Customer` denied).
 - Unit/validation tests added in `tests/phase2.catalog.test.js` (not executed per Phase 2 rules).
 
+## Phase 3 - completed work
+
+- Prisma schema: `Address`, `Cart`, `CartItem`, `Order`, `OrderItem`, and enums `OrderStatus`, `PaymentMethod`, `PaymentStatus`.
+- Delivery addresses (`/api/addresses`): customer-owned CRUD with automatic default address management.
+- Shopping cart (`/api/cart`): persistent per-user cart with add/update/remove/clear, stock availability checks, and computed line totals and subtotal.
+- Checkout & customer orders (`/api/orders`): transactional checkout from cart + owned delivery address, snapshotted `OrderItem` prices and shipping address, unique `orderNumber`, cart clearing, and "My Orders" listing/details.
+- Admin order management (`/api/admin/orders`): paginated listing with search/filters, order details, and validated status transitions (`PENDING` -> `PAID`/`SHIPPED`/`CANCELLED`, `PAID` -> `SHIPPED`/`CANCELLED`, `SHIPPED` -> `DELIVERED`/`CANCELLED`).
+- Unit/validation tests added in `tests/phase3.orders.test.js` (not executed).
+
 ## Pending work
 
 - Database migration & seed: run `npm run prisma:migrate` and `npm run db:seed` on your machine when ready.
-- Phase 3: Cart, delivery addresses, checkout and order management.
 - Phase 4: Razorpay, COD, payment webhooks, concurrency-safe inventory and stock restoration.
 - Phase 5: Bulk enquiries, automatic lead creation, CRM, notes and follow-ups.
 - Phase 6: Dashboard analytics, integration, sample data, full API docs and Postman collection.
@@ -55,14 +63,15 @@ virar-organics-backend/
     seed.js
   tests/
     phase2.catalog.test.js
+    phase3.orders.test.js
   src/
     server.js
     app.js
     config/        env.js, prisma.js
-    controllers/   auth, staff, role, permission, category, product
+    controllers/   auth, staff, role, permission, category, product, address, cart, order
     middleware/    authenticate, authorize, validate, notFound, errorHandler
-    routes/        index, auth.routes, admin.routes, category.routes, product.routes
-    services/      auth, staff, role, permission, category, product
+    routes/        index, auth.routes, admin.routes, category.routes, product.routes, address.routes, cart.routes, order.routes
+    services/      auth, staff, role, permission, category, product, address, cart, order
     utils/         ApiError, asyncHandler, response, pagination, jwt, password, permissions, slug
-    validators/    common, auth, staff, role, permission, category, product
+    validators/    common, auth, staff, role, permission, category, product, address, cart, order
 ```

@@ -1,6 +1,7 @@
 // Virar Organics - Prisma schema
 // Phase 1: User, Role, Permission, RolePermission (dynamic RBAC)
 // Phase 2: Category, Product (catalog, pricing, stock management)
+// Phase 3: Address, Cart, CartItem, Order, OrderItem (checkout & order management)
 
 generator client {
   provider = "prisma-client-js"
@@ -23,6 +24,9 @@ model User {
   lastLoginAt  DateTime?
   roleId       String
   role         Role      @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  addresses    Address[]
+  cart         Cart?
+  orders       Order[]
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
@@ -108,8 +112,10 @@ model Product {
   isActive          Boolean  @default(true)
   isFeatured        Boolean  @default(false)
   categoryId        String
-  category          Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  createdAt         DateTime @default(now())
+  category          Category    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  cartItems         CartItem[]
+  orderItems        OrderItem[]
+  createdAt         DateTime    @default(now())
   updatedAt         DateTime @updatedAt
 
   @@index([categoryId])
@@ -119,4 +125,114 @@ model Product {
   @@index([stock])
   @@index([createdAt])
   @@map("products")
+}
+
+
+enum OrderStatus {
+  PENDING
+  PAID
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  RAZORPAY
+  COD
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+model Address {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label        String?
+  fullName     String
+  phone        String
+  addressLine1 String
+  addressLine2 String?
+  city         String
+  state        String
+  postalCode   String
+  country      String   @default("India")
+  isDefault    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+  @@index([userId, isDefault])
+  @@map("addresses")
+}
+
+model Cart {
+  id        String     @id @default(uuid())
+  userId    String     @unique
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items     CartItem[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@map("carts")
+}
+
+model CartItem {
+  id        String   @id @default(uuid())
+  cartId    String
+  cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity  Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([cartId, productId])
+  @@index([productId])
+  @@map("cart_items")
+}
+
+model Order {
+  id              String        @id @default(uuid())
+  orderNumber     String        @unique
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  status          OrderStatus   @default(PENDING)
+  paymentMethod   PaymentMethod
+  paymentStatus   PaymentStatus @default(PENDING)
+  subtotal        Decimal       @db.Decimal(10, 2)
+  totalAmount     Decimal       @db.Decimal(10, 2)
+  shippingAddress Json
+  notes           String?
+  items           OrderItem[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([createdAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id          String  @id @default(uuid())
+  orderId     String
+  order       Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  productName String
+  sku         String
+  unit        String
+  unitPrice   Decimal @db.Decimal(10, 2)
+  quantity    Int
+  lineTotal   Decimal @db.Decimal(10, 2)
+
+  @@index([orderId])
+  @@index([productId])
+  @@map("order_items")
 }
