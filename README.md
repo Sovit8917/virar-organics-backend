@@ -96,7 +96,7 @@ Role bodies take permission **keys**, for example `{ "permissions": ["leads:read
 | Method | Path | Access | Notes |
 |--------|------|--------|-------|
 | POST | `/api/payments/razorpay/verify` | `orders:own` | Verify Razorpay client callback signature & mark order `PAID` |
-| POST | `/api/webhooks/razorpay` | public (HMAC-SHA256) | Raw-body webhook handler (`payment.captured`, `order.paid`, `payment.failed`) |
+| POST | `/api/webhooks/razorpay` | public (HMAC-SHA256) | Raw-body webhook handler (`payment.captured`, `order.paid`, `payment.failed`, `refund.processed`, `refund.failed`) |
 
 ## Phase 5 endpoints
 
@@ -135,6 +135,7 @@ Role bodies take permission **keys**, for example `{ "permissions": ["leads:read
 | GET | `/api/admin/orders` | `orders:read-all` |
 | GET | `/api/admin/orders/:id` | `orders:read-all` |
 | PATCH | `/api/admin/orders/:id/status` | `orders:update-status` |
+| POST | `/api/admin/orders/:id/refund` | `orders:update-status` (retry `REFUND_FAILED` Razorpay refund) |
 
 ## Real-world problems solved
 

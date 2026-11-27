@@ -31,3 +31,7 @@ exports.getAdmin = asyncHandler(async (req, res) =>
 exports.updateStatus = asyncHandler(async (req, res) =>
   ok(res, await orderService.updateStatus(req.params.id, req.body.status)),
 );
+
+exports.retryRefund = asyncHandler(async (req, res) =>
+  ok(res, await orderService.retryRefund(req.params.id)),
+);

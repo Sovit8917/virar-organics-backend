@@ -151,7 +151,9 @@ enum PaymentStatus {
   PENDING
   PAID
   FAILED
+  REFUND_PENDING
   REFUNDED
+  REFUND_FAILED
 }
 
 model Address {
@@ -216,8 +218,10 @@ model Order {
   notes             String?
   razorpayOrderId   String?       @unique
   razorpayPaymentId String?       @unique
+  razorpayRefundId  String?       @unique
   paidAt            DateTime?
   cancelledAt       DateTime?
+  refundedAt        DateTime?
   stockRestored     Boolean       @default(false)
   items             OrderItem[]
   createdAt         DateTime      @default(now())

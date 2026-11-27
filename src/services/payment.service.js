@@ -3,14 +3,18 @@ const prisma = require('../config/prisma');
 const ApiError = require('../utils/ApiError');
 const { verifyPaymentSignature, verifyWebhookSignature } = require('../utils/razorpay');
 const { formatOrder, orderSelect } = require('./order.service');
+const { executeRazorpayRefund } = require('./refund.service');
 
-// Atomic idempotent transition: only marks an order PAID if it is currently PENDING and not yet PAID.
-const markOrderPaidIfPending = async (db, { orderId, razorpayPaymentId }) => {
-  const result = await db.order.updateMany({
+// Reconciles a captured Razorpay payment atomically:
+// 1) If order is PENDING and unpaid, marks it PAID.
+// 2) If order was ALREADY CANCELLED before payment arrived (race condition),
+//    records razorpayPaymentId/paidAt and claims REFUND_PENDING so a refund is initiated once.
+const reconcileCapturedPayment = async (db, { orderId, razorpayPaymentId }) => {
+  const paidClaim = await db.order.updateMany({
     where: {
       id: orderId,
       status: 'PENDING',
-      paymentStatus: { not: 'PAID' },
+      paymentStatus: { in: ['PENDING', 'FAILED'] },
     },
     data: {
       status: 'PAID',
@@ -20,8 +24,31 @@ const markOrderPaidIfPending = async (db, { orderId, razorpayPaymentId }) => {
     },
   });
 
+  if (paidClaim.count === 1) {
+    const order = await db.order.findUnique({ where: { id: orderId }, select: orderSelect });
+    return { transitionedToPaid: true, needsPostCancelRefund: false, order };
+  }
+
+  const lateClaim = await db.order.updateMany({
+    where: {
+      id: orderId,
+      status: 'CANCELLED',
+      paymentStatus: { in: ['PENDING', 'FAILED'] },
+      razorpayRefundId: null,
+    },
+    data: {
+      paymentStatus: 'REFUND_PENDING',
+      razorpayPaymentId,
+      paidAt: new Date(),
+    },
+  });
+
   const order = await db.order.findUnique({ where: { id: orderId }, select: orderSelect });
-  return { transitioned: result.count === 1, order: formatOrder(order) };
+  return {
+    transitionedToPaid: false,
+    needsPostCancelRefund: lateClaim.count === 1,
+    order,
+  };
 };
 
 const verifyRazorpayPayment = async (
@@ -47,12 +74,33 @@ const verifyRazorpayPayment = async (
   });
   if (!isValid) throw ApiError.badRequest('Invalid Razorpay payment signature');
 
-  const { transitioned, order: updated } = await markOrderPaidIfPending(prisma, {
+  const result = await reconcileCapturedPayment(prisma, {
     orderId: order.id,
     razorpayPaymentId,
   });
 
-  return { verified: true, alreadyProcessed: !transitioned, order: updated };
+  if (result.needsPostCancelRefund) {
+    await executeRazorpayRefund({
+      orderId: result.order.id,
+      orderNumber: result.order.orderNumber,
+      razorpayPaymentId,
+      amountInPaise: Math.round(Number(result.order.totalAmount) * 100),
+      reason: 'payment_captured_after_cancellation',
+    });
+    const refreshed = await prisma.order.findUnique({ where: { id: order.id }, select: orderSelect });
+    return {
+      verified: true,
+      alreadyProcessed: false,
+      refundInitiated: true,
+      order: formatOrder(refreshed),
+    };
+  }
+
+  return {
+    verified: true,
+    alreadyProcessed: !result.transitionedToPaid,
+    order: formatOrder(result.order),
+  };
 };
 
 const handleRazorpayWebhook = async (rawBody, headers) => {
@@ -71,15 +119,18 @@ const handleRazorpayWebhook = async (rawBody, headers) => {
   const eventType = payload?.event || 'unknown';
   const paymentEntity = payload?.payload?.payment?.entity;
   const orderEntity = payload?.payload?.order?.entity;
+  const refundEntity = payload?.payload?.refund?.entity;
 
-  const razorpayPaymentId = paymentEntity?.id || null;
+  const razorpayPaymentId = paymentEntity?.id || refundEntity?.payment_id || null;
   const razorpayOrderId = paymentEntity?.order_id || orderEntity?.id || null;
+  const razorpayRefundId = refundEntity?.id || null;
   const eventId =
     headers['x-razorpay-event-id'] ||
-    `${eventType}:${razorpayPaymentId || 'none'}:${razorpayOrderId || 'none'}`;
+    `${eventType}:${razorpayRefundId || razorpayPaymentId || 'none'}:${razorpayOrderId || 'none'}`;
 
+  let txResult;
   try {
-    return await prisma.$transaction(async (tx) => {
+    txResult = await prisma.$transaction(async (tx) => {
       // Unique constraint on eventId ensures each webhook delivery is processed at most once.
       await tx.paymentEvent.create({
         data: {
@@ -91,6 +142,46 @@ const handleRazorpayWebhook = async (rawBody, headers) => {
           payload,
         },
       });
+
+      if (eventType === 'refund.processed' || eventType === 'refund.failed') {
+        const order = await tx.order.findFirst({
+          where: {
+            OR: [
+              ...(razorpayRefundId ? [{ razorpayRefundId }] : []),
+              ...(razorpayPaymentId ? [{ razorpayPaymentId }] : []),
+            ],
+          },
+          select: { id: true, paymentStatus: true },
+        });
+
+        if (!order) {
+          return { received: true, processed: false, reason: 'Order not found for refund webhook' };
+        }
+
+        if (eventType === 'refund.processed') {
+          const updated = await tx.order.updateMany({
+            where: {
+              id: order.id,
+              paymentStatus: { in: ['REFUND_PENDING', 'REFUND_FAILED', 'PAID'] },
+            },
+            data: {
+              paymentStatus: 'REFUNDED',
+              ...(razorpayRefundId ? { razorpayRefundId } : {}),
+              refundedAt: new Date(),
+            },
+          });
+          return { received: true, processed: true, refunded: updated.count === 1 };
+        }
+
+        const failed = await tx.order.updateMany({
+          where: { id: order.id, paymentStatus: 'REFUND_PENDING' },
+          data: {
+            paymentStatus: 'REFUND_FAILED',
+            ...(razorpayRefundId ? { razorpayRefundId } : {}),
+          },
+        });
+        return { received: true, processed: true, refundFailed: failed.count === 1 };
+      }
 
       if (!razorpayOrderId) {
         return { received: true, processed: false, reason: 'No razorpayOrderId in payload' };
@@ -106,11 +197,17 @@ const handleRazorpayWebhook = async (rawBody, headers) => {
       }
 
       if (eventType === 'payment.captured' || eventType === 'order.paid') {
-        const { transitioned } = await markOrderPaidIfPending(tx, {
+        const reconciled = await reconcileCapturedPayment(tx, {
           orderId: order.id,
           razorpayPaymentId,
         });
-        return { received: true, processed: true, orderTransitioned: transitioned };
+        return {
+          received: true,
+          processed: true,
+          orderTransitioned: reconciled.transitionedToPaid,
+          needsPostCancelRefund: reconciled.needsPostCancelRefund,
+          order: reconciled.order,
+        };
       }
 
       if (eventType === 'payment.failed') {
@@ -129,6 +226,34 @@ const handleRazorpayWebhook = async (rawBody, headers) => {
     }
     throw err;
   }
+
+  // If payment arrived after order was already cancelled, initiate Razorpay refund outside the DB tx.
+  if (txResult?.needsPostCancelRefund && txResult.order) {
+    const refundOutcome = await executeRazorpayRefund({
+      orderId: txResult.order.id,
+      orderNumber: txResult.order.orderNumber,
+      razorpayPaymentId,
+      amountInPaise: Math.round(Number(txResult.order.totalAmount) * 100),
+      reason: 'payment_captured_after_cancellation',
+    });
+    return {
+      received: true,
+      processed: true,
+      orderTransitioned: false,
+      postCancelRefund: refundOutcome.status,
+    };
+  }
+
+  if (txResult?.order) {
+    const { order: _omitted, needsPostCancelRefund: _flag, ...summary } = txResult;
+    return summary;
+  }
+
+  return txResult;
 };
 
-module.exports = { markOrderPaidIfPending, verifyRazorpayPayment, handleRazorpayWebhook };
+module.exports = {
+  reconcileCapturedPayment,
+  verifyRazorpayPayment,
+  handleRazorpayWebhook,
+};

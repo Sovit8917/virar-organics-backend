@@ -27,7 +27,7 @@ const getDashboardSummary = async () => {
       where: {
         createdAt: { gte: startOfMonth, lte: now },
         status: { not: 'CANCELLED' },
-        OR: [{ paymentStatus: 'PAID' }, { status: { in: ['PAID', 'SHIPPED', 'DELIVERED'] } }],
+        paymentStatus: 'PAID',
       },
     }),
     prisma.lead.count({

@@ -42,6 +42,33 @@ const createRazorpayOrder = async ({ amountInPaise, receipt, notes = {} }) => {
   return data;
 };
 
+const createRazorpayRefund = async ({ razorpayPaymentId, amountInPaise, notes = {} }) => {
+  assertRazorpayKeys();
+  const auth = Buffer.from(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`).toString('base64');
+
+  const response = await fetch(
+    `https://api.razorpay.com/v1/payments/${encodeURIComponent(razorpayPaymentId)}/refund`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${auth}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        amount: amountInPaise,
+        notes,
+      }),
+    },
+  );
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const msg = data?.error?.description || 'Failed to initiate Razorpay refund';
+    throw new ApiError(502, msg);
+  }
+  return data;
+};
+
 const verifyPaymentSignature = ({ razorpayOrderId, razorpayPaymentId, razorpaySignature }) => {
   assertRazorpayKeys();
   const expected = crypto
@@ -67,6 +94,7 @@ const verifyWebhookSignature = (rawBody, signatureHeader) => {
 module.exports = {
   safeEqualHex,
   createRazorpayOrder,
+  createRazorpayRefund,
   verifyPaymentSignature,
   verifyWebhookSignature,
 };

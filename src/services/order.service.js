@@ -4,6 +4,7 @@ const env = require('../config/env');
 const ApiError = require('../utils/ApiError');
 const { buildMeta } = require('../utils/pagination');
 const { createRazorpayOrder } = require('../utils/razorpay');
+const { executeRazorpayRefund } = require('./refund.service');
 
 const ALLOWED_TRANSITIONS = {
   PENDING: ['PAID', 'SHIPPED', 'CANCELLED'],
@@ -26,8 +27,10 @@ const orderSelect = {
   notes: true,
   razorpayOrderId: true,
   razorpayPaymentId: true,
+  razorpayRefundId: true,
   paidAt: true,
   cancelledAt: true,
+  refundedAt: true,
   stockRestored: true,
   createdAt: true,
   updatedAt: true,
@@ -68,7 +71,13 @@ const formatOrder = (order) => ({
 });
 
 // Atomically transitions an order to CANCELLED and restores product stock at most once.
+// For PAID Razorpay orders, marks REFUND_PENDING (never REFUNDED until Razorpay confirms).
 const cancelAndRestoreStock = async (tx, order, { select = orderSelect } = {}) => {
+  const shouldRefund =
+    order.paymentMethod === 'RAZORPAY' &&
+    order.paymentStatus === 'PAID' &&
+    !order.razorpayRefundId;
+
   const claimed = await tx.order.updateMany({
     where: {
       id: order.id,
@@ -79,7 +88,7 @@ const cancelAndRestoreStock = async (tx, order, { select = orderSelect } = {}) =
       status: 'CANCELLED',
       stockRestored: true,
       cancelledAt: new Date(),
-      ...(order.paymentStatus === 'PAID' ? { paymentStatus: 'REFUNDED' } : {}),
+      ...(shouldRefund ? { paymentStatus: 'REFUND_PENDING' } : {}),
     },
   });
 
@@ -95,7 +104,8 @@ const cancelAndRestoreStock = async (tx, order, { select = orderSelect } = {}) =
     });
   }
 
-  return tx.order.findUnique({ where: { id: order.id }, select });
+  const updated = await tx.order.findUnique({ where: { id: order.id }, select });
+  return { order: updated, needsRefund: shouldRefund };
 };
 
 const checkout = async (userId, { addressId, paymentMethod, notes }) => {
@@ -272,7 +282,7 @@ const cancelOwn = async (userId, id) => {
     throw ApiError.conflict(`Only PENDING orders can be cancelled by customer (current: ${order.status})`);
   }
 
-  const cancelled = await prisma.$transaction((tx) => cancelAndRestoreStock(tx, order));
+  const { order: cancelled } = await prisma.$transaction((tx) => cancelAndRestoreStock(tx, order));
   return formatOrder(cancelled);
 };
 
@@ -320,9 +330,25 @@ const updateStatus = async (id, nextStatus) => {
   }
 
   if (nextStatus === 'CANCELLED') {
-    const cancelled = await prisma.$transaction((tx) =>
+    const { order: cancelled, needsRefund } = await prisma.$transaction((tx) =>
       cancelAndRestoreStock(tx, existing, { select: adminOrderSelect }),
     );
+
+    if (needsRefund) {
+      await executeRazorpayRefund({
+        orderId: cancelled.id,
+        orderNumber: cancelled.orderNumber,
+        razorpayPaymentId: cancelled.razorpayPaymentId,
+        amountInPaise: Math.round(Number(cancelled.totalAmount) * 100),
+        reason: 'admin_order_cancelled',
+      });
+      const refreshed = await prisma.order.findUnique({
+        where: { id: cancelled.id },
+        select: adminOrderSelect,
+      });
+      return formatOrder(refreshed);
+    }
+
     return formatOrder(cancelled);
   }
 
@@ -334,6 +360,38 @@ const updateStatus = async (id, nextStatus) => {
 
   const updated = await prisma.order.update({ where: { id }, data, select: adminOrderSelect });
   return formatOrder(updated);
+};
+
+// Retries a failed refund for an already-cancelled Razorpay order without risking duplicate refunds.
+const retryRefund = async (id) => {
+  const claimed = await prisma.order.updateMany({
+    where: {
+      id,
+      status: 'CANCELLED',
+      paymentMethod: 'RAZORPAY',
+      paymentStatus: 'REFUND_FAILED',
+      razorpayRefundId: null,
+    },
+    data: { paymentStatus: 'REFUND_PENDING' },
+  });
+
+  if (claimed.count === 0) {
+    const existing = await prisma.order.findUnique({ where: { id }, select: { id: true, paymentStatus: true, razorpayRefundId: true } });
+    if (!existing) throw ApiError.notFound('Order not found');
+    throw ApiError.conflict(`Order is not eligible for refund retry (paymentStatus: ${existing.paymentStatus})`);
+  }
+
+  const order = await prisma.order.findUnique({ where: { id }, select: adminOrderSelect });
+  await executeRazorpayRefund({
+    orderId: order.id,
+    orderNumber: order.orderNumber,
+    razorpayPaymentId: order.razorpayPaymentId,
+    amountInPaise: Math.round(Number(order.totalAmount) * 100),
+    reason: 'admin_refund_retry',
+  });
+
+  const refreshed = await prisma.order.findUnique({ where: { id }, select: adminOrderSelect });
+  return formatOrder(refreshed);
 };
 
 module.exports = {
@@ -348,4 +406,5 @@ module.exports = {
   listAdmin,
   getAdmin,
   updateStatus,
+  retryRefund,
 };

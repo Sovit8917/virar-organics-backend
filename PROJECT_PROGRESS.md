@@ -61,9 +61,11 @@ Stack: Node.js, Express.js, PostgreSQL, Prisma ORM, JWT, bcrypt, Razorpay (Test 
 
 ## Phase 6 - completed work
 
-- Admin Dashboard (`GET /api/admin/dashboard`, `dashboard:read`): returns `totalOrdersToday`, `revenueThisMonth`, `newLeadsCount`, `todaysFollowUpsCount`, and `lowStockProductsCount`.
+- Admin Dashboard (`GET /api/admin/dashboard`, `dashboard:read`): returns `totalOrdersToday`, `revenueThisMonth` (strictly `paymentStatus: 'PAID'` and `status != 'CANCELLED'`, excluding pending COD/unpaid orders), `newLeadsCount`, `todaysFollowUpsCount`, and `lowStockProductsCount`.
+- Paid-order cancellation & Razorpay Refunds: added `REFUND_PENDING` / `REFUND_FAILED` statuses, `razorpayRefundId`, `refundedAt`, `createRazorpayRefund` (`src/utils/razorpay.js`), `executeRazorpayRefund` (`src/services/refund.service.js`), `refund.processed` / `refund.failed` webhook handling, and `POST /api/admin/orders/:id/refund` retry endpoint. Orders are marked `REFUNDED` only after Razorpay confirms.
+- Payment/cancellation race safety: `reconcileCapturedPayment` atomically reconciles late payments arriving after cancellation by preserving `razorpayPaymentId` / `paidAt`, claiming `REFUND_PENDING`, and initiating a Razorpay refund without losing the payment event.
 - Sample data (`prisma/seed.js`): idempotent seeding for 5 organic categories, 10 products, 1 customer delivery address, 3 sample orders, and 5 bulk enquiries/CRM leads with notes and today's follow-ups.
-- Integration & documentation: added `tests/phase6.dashboard.test.js`, `"test"` script in `package.json`, `postman/Virar_Organics_API.postman_collection.json`, and finalized `README.md`.
+- Integration & documentation: added `tests/phase6.dashboard.test.js`, `tests/phase4_6.fixes.test.js`, `"test"` script in `package.json`, `postman/Virar_Organics_API.postman_collection.json`, and finalized `README.md`.
 
 ## Next steps on your machine
 
@@ -91,6 +93,7 @@ virar-organics-backend/
     phase4.payments.test.js
     phase5.crm.test.js
     phase6.dashboard.test.js
+    phase4_6.fixes.test.js
   src/
     server.js
     app.js
@@ -98,7 +101,7 @@ virar-organics-backend/
     controllers/   auth, staff, role, permission, category, product, address, cart, order, payment, enquiry, lead, dashboard
     middleware/    authenticate, authorize, validate, notFound, errorHandler
     routes/        index, auth.routes, admin.routes, category.routes, product.routes, address.routes, cart.routes, order.routes, payment.routes, enquiry.routes
-    services/      auth, staff, role, permission, category, product, address, cart, order, payment, enquiry, lead, dashboard
+    services/      auth, staff, role, permission, category, product, address, cart, order, payment, refund, enquiry, lead, dashboard
     utils/         ApiError, asyncHandler, response, pagination, jwt, password, permissions, slug, razorpay
     validators/    common, auth, staff, role, permission, category, product, address, cart, order, payment, enquiry, lead
 ```

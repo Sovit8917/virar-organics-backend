@@ -76,6 +76,7 @@ router.patch('/products/:id/stock', need('inventory:update'), validate({ params:
 router.get('/orders', need('orders:read-all'), validate({ query: ov.listAdmin }), orders.listAdmin);
 router.get('/orders/:id', need('orders:read-all'), validate({ params: ov.idParam }), orders.getAdmin);
 router.patch('/orders/:id/status', need('orders:update-status'), validate({ params: ov.idParam, body: ov.updateStatus }), orders.updateStatus);
+router.post('/orders/:id/refund', need('orders:update-status'), validate({ params: ov.idParam }), orders.retryRefund);
 
 // ---- CRM Leads, Notes & Follow-ups (Phase 5) ----
 router.get('/leads', need('leads:read'), validate({ query: lv.list }), leads.list);
