@@ -1,6 +1,7 @@
 const prisma = require('../config/prisma');
 const ApiError = require('../utils/ApiError');
 const { buildMeta } = require('../utils/pagination');
+const { getIstDayBounds } = require('../utils/date');
 
 const ALLOWED_LEAD_TRANSITIONS = {
   NEW: ['CONTACTED', 'CONVERTED', 'LOST'],
@@ -100,10 +101,7 @@ const list = async ({ page, limit, status, assignedToId, search, hasFollowUp, so
 };
 
 const todayFollowUps = async ({ page, limit, assignedToId, includeClosed }) => {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  const end = new Date();
-  end.setHours(23, 59, 59, 999);
+  const { start, end } = getIstDayBounds();
 
   const where = {
     followUpDate: { gte: start, lte: end },
