@@ -15,9 +15,9 @@ Seeded accounts (override via `SEED_*` variables; required in production):
 
 | Role | Email | Password |
 |------|-------|----------|
-| Admin | admin@virarorganics.test | Admin@12345 |
-| Sales Executive | sales@virarorganics.test | Sales@12345 |
-| Customer | customer@virarorganics.test | Customer@12345 |
+| Admin | admin@virarorganics.com | Admin@12345 |
+| Sales Executive | sales@virarorganics.com | Sales@12345 |
+| Customer | customer@virarorganics.com | Customer@12345 |
 
 Change these passwords outside local development.
 
